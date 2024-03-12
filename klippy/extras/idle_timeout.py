@@ -22,6 +22,7 @@ class IdleTimeout:
         self.gcode = self.printer.lookup_object('gcode')
         self.toolhead = self.timeout_timer = None
         self.printer.register_event_handler("klippy:ready", self.handle_ready)
+        self.printer.register_event_handler("klippy:start_print", self.handle_start_print)
         self.idle_timeout = config.getfloat('timeout', 600., above=0.)
         gcode_macro = self.printer.load_object(config, 'gcode_macro')
         self.idle_gcode = gcode_macro.load_template(config, 'gcode',
@@ -31,13 +32,17 @@ class IdleTimeout:
                                     desc=self.cmd_SET_IDLE_TIMEOUT_help)
         self.state = "Idle"
         self.last_print_start_systime = 0.
+        self.printing_time = 0.
+    
     def get_status(self, eventtime):
-        printing_time = 0.
-        if self.state == "Printing":
-            printing_time = eventtime - self.last_print_start_systime
-        return {"state": self.state,
-                "printing_time": printing_time,
-                "idle_timeout": self.idle_timeout}
+        if self.state == "Printing": 
+            self.printing_time = eventtime - self.last_print_start_systime
+        return { "state": self.state, "printing_time": self.printing_time }
+        
+    def handle_start_print(self):
+        curtime = self.reactor.monotonic()
+        self.last_print_start_systime = curtime
+
     def handle_ready(self):
         self.toolhead = self.printer.lookup_object('toolhead')
         self.timeout_timer = self.reactor.register_timer(self.timeout_handler)
@@ -47,7 +52,7 @@ class IdleTimeout:
         self.state = "Printing"
         try:
             script = self.idle_gcode.render()
-            self.gcode.run_script(script)
+            res = self.gcode.run_script(script)
         except:
             logging.exception("idle timeout gcode execution")
             self.state = "Ready"
@@ -100,7 +105,7 @@ class IdleTimeout:
             return
         # Transition to "printing" state
         self.state = "Printing"
-        self.last_print_start_systime = curtime
+        # self.last_print_start_systime = curtime
         check_time = READY_TIMEOUT + print_time - est_print_time
         self.reactor.update_timer(self.timeout_timer, curtime + check_time)
         self.printer.send_event("idle_timeout:printing",

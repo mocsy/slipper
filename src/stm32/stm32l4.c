@@ -68,8 +68,6 @@ gpio_clock_enable(GPIO_TypeDef *regs)
     RCC->AHB2ENR;
 }
 
-// PLL (L412) input: 4 to 16Mhz, vco: 96 to 344Mhz, output: 12 to 80Mhz
-
 #if !CONFIG_STM32_CLOCK_REF_INTERNAL
 DECL_CONSTANT_STR("RESERVE_PINS_crystal", "PC14,PC15");
 #endif
@@ -98,7 +96,7 @@ enable_clock_stm32l4(void)
     RCC->CR |= RCC_CR_PLLON;
 
     // Enable 48Mhz USB clock using clock recovery
-    if (CONFIG_USB) {
+    if (CONFIG_USBSERIAL) {
         RCC->CRRCR |= RCC_CRRCR_HSI48ON;
         while (!(RCC->CRRCR & RCC_CRRCR_HSI48RDY))
             ;

@@ -44,13 +44,11 @@ usb_bulk_in_task(void)
 {
     if (!sched_check_wake(&usb_bulk_in_wake))
         return;
-    uint_fast8_t tpos = transmit_pos, max_tpos = tpos;
+    uint_fast8_t tpos = transmit_pos;
     if (!tpos)
         return;
-    if (max_tpos > USB_CDC_EP_BULK_IN_SIZE)
-        max_tpos = USB_CDC_EP_BULK_IN_SIZE;
-    else if (max_tpos == USB_CDC_EP_BULK_IN_SIZE)
-        max_tpos = USB_CDC_EP_BULK_IN_SIZE-1; // Avoid zero-length-packets
+    uint_fast8_t max_tpos = (tpos > USB_CDC_EP_BULK_IN_SIZE
+                             ? USB_CDC_EP_BULK_IN_SIZE : tpos);
     int_fast8_t ret = usb_send_bulk_in(transmit_buf, max_tpos);
     if (ret <= 0)
         return;

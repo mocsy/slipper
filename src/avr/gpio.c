@@ -70,10 +70,8 @@ void
 gpio_out_reset(struct gpio_out g, uint8_t val)
 {
     irqstatus_t flag = irq_save();
-    uint8_t newmode = g.regs->mode | g.bit;
-    uint8_t newout = val ? (g.regs->out | g.bit) : (g.regs->out & ~g.bit);
-    g.regs->out = newout;
-    g.regs->mode = newmode;
+    g.regs->out = val ? (g.regs->out | g.bit) : (g.regs->out & ~g.bit);
+    g.regs->mode |= g.bit;
     irq_restore(flag);
 }
 
@@ -116,10 +114,8 @@ void
 gpio_in_reset(struct gpio_in g, int8_t pull_up)
 {
     irqstatus_t flag = irq_save();
-    uint8_t newout = pull_up>0 ? (g.regs->out | g.bit) : (g.regs->out & ~g.bit);
-    uint8_t newmode = g.regs->mode & ~g.bit;
-    g.regs->mode = newmode;
-    g.regs->out = newout;
+    g.regs->out = pull_up > 0 ? (g.regs->out | g.bit) : (g.regs->out & ~g.bit);
+    g.regs->mode &= ~g.bit;
     irq_restore(flag);
 }
 

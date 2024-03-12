@@ -1,21 +1,17 @@
 # Virtual sdcard support (print files directly from a host g-code file)
 #
-# Copyright (C) 2018-2024  Kevin O'Connor <kevin@koconnor.net>
+# Copyright (C) 2018  Kevin O'Connor <kevin@koconnor.net>
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
-import os, sys, logging, io
+import os, logging, io
 
 VALID_GCODE_EXTS = ['gcode', 'g', 'gco']
-
-DEFAULT_ERROR_GCODE = """
-{% if 'heaters' in printer %}
-   TURN_OFF_HEATERS
-{% endif %}
-"""
 
 class VirtualSD:
     def __init__(self, config):
         self.printer = config.get_printer()
+        self.printer.register_event_handler("klippy:shutdown",
+                                            self.handle_shutdown)
         # sdcard state
         sd = config.get('path')
         self.sdcard_dirname = os.path.normpath(os.path.expanduser(sd))
@@ -31,7 +27,7 @@ class VirtualSD:
         # Error handling
         gcode_macro = self.printer.load_object(config, 'gcode_macro')
         self.on_error_gcode = gcode_macro.load_template(
-            config, 'on_error_gcode', DEFAULT_ERROR_GCODE)
+            config, 'on_error_gcode', '')
         # Register commands
         self.gcode = self.printer.lookup_object('gcode')
         for cmd in ['M20', 'M21', 'M23', 'M24', 'M25', 'M26', 'M27']:
@@ -44,9 +40,7 @@ class VirtualSD:
         self.gcode.register_command(
             "SDCARD_PRINT_FILE", self.cmd_SDCARD_PRINT_FILE,
             desc=self.cmd_SDCARD_PRINT_FILE_help)
-        self.printer.register_event_handler("klippy:analyze_shutdown",
-                                            self._handle_analyze_shutdown)
-    def _handle_analyze_shutdown(self, msg, details):
+    def handle_shutdown(self):
         if self.work_timer is not None:
             self.must_pause_work = True
             try:
@@ -84,8 +78,7 @@ class VirtualSD:
                 filenames = os.listdir(self.sdcard_dirname)
                 return [(fname, os.path.getsize(os.path.join(dname, fname)))
                         for fname in sorted(filenames, key=str.lower)
-                        if not fname.startswith('.')
-                        and os.path.isfile((os.path.join(dname, fname)))]
+                        if os.path.isfile((os.path.join(dname, fname)))]
             except:
                 logging.exception("virtual_sdcard get_file_list")
                 raise self.gcode.error("Unable to get file list")
@@ -154,6 +147,7 @@ class VirtualSD:
         if filename[0] == '/':
             filename = filename[1:]
         self._load_file(gcmd, filename, check_subdirs=True)
+        self.printer.send_event("klippy:start_print")
         self.do_resume()
     def cmd_M20(self, gcmd):
         # List SD card
@@ -197,6 +191,9 @@ class VirtualSD:
         self.file_size = fsize
         self.print_stats.set_current_file(filename)
     def cmd_M24(self, gcmd):
+        if self.work_timer is not None:
+            raise self.gcode.error("SD busy")
+        self.printer.send_event("klippy:start_print")
         # Start/resume SD print
         self.do_resume()
     def cmd_M25(self, gcmd):
@@ -259,15 +256,12 @@ class VirtualSD:
                 continue
             # Pause if any other request is pending in the gcode class
             if gcode_mutex.test():
-                self.reactor.pause(self.reactor.monotonic() + 0.050)
+                self.reactor.pause(self.reactor.monotonic() + 0.100)
                 continue
             # Dispatch command
             self.cmd_from_sd = True
             line = lines.pop()
-            if sys.version_info.major >= 3:
-                next_file_position = self.file_position + len(line.encode()) + 1
-            else:
-                next_file_position = self.file_position + len(line) + 1
+            next_file_position = self.file_position + len(line) + 1
             self.next_file_position = next_file_position
             try:
                 self.gcode.run_script(line)
